@@ -1,5 +1,5 @@
 name: File Links
-version: "1.0.0"
+version: "1.1.0"
 slug: file_links
 description: Serve chosen files under clean public paths, like /resume
 url: https://github.com/YOUR_GITHUB_USERNAME/ha-addons
@@ -20,5 +20,7 @@ map:
     read_only: false
 options:
   public_url: ""
+  language: en
 schema:
   public_url: str?
+  language: list(en|nl|fr|de|auto)

@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="{{lang}}">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>{{title}}</title>
+<link rel="icon" type="image/png" href="/favicon.png">
+<style>
+  :root {
+    color-scheme: light;
+    --paper: #e9eeea;
+    --card: #ffffff;
+    --line: #cdd7d1;
+    --ink: #1d2521;
+    --muted: #55625b;
+    --sign: #006b3f;
+    --soft: #b9d8c8;
+    --warm: #e9b949;
+    --sky: #cfe3ec;
+    --deep: #2b3632;
+    --danger: #b3261e;
+    --focus: #e0a800;
+    --veil: rgba(233, 238, 234, 0.1);
+    --veil-center: rgba(233, 238, 234, 0.72);
+    --font: "Segoe UI", system-ui, -apple-system, Roboto, sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      color-scheme: dark;
+      --paper: #121718;
+      --card: #222b2d;
+      --line: #34413e;
+      --ink: #e6ece8;
+      --muted: #9aa7a0;
+      --sign: #0f7a50;
+      --soft: #24493a;
+      --warm: #8a6d22;
+      --sky: #213641;
+      --deep: #0b0f10;
+      --danger: #f2817a;
+      --veil: rgba(18, 23, 24, 0.1);
+      --veil-center: rgba(18, 23, 24, 0.72);
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    margin: 0; background: var(--paper); color: var(--ink);
+    font: 400 16px/1.5 var(--font);
+    display: grid; place-items: center; overflow: hidden;
+  }
+
+  /* A soft-focus impression of the kind of file behind the lock. */
+  .art { position: fixed; inset: -48px; filter: blur(7px); transform: scale(1.04); }
+  .art svg { display: block; width: 100%; height: 100%; }
+  .art .bg { fill: var(--paper); }
+  .art .c { fill: var(--card); }
+  .art .l { fill: var(--line); }
+  .art .a { fill: var(--sign); }
+  .art .s { fill: var(--soft); }
+  .art .w { fill: var(--warm); }
+  .art .k { fill: var(--sky); }
+  .art .d { fill: var(--deep); }
+  .veil { position: fixed; inset: 0; background: radial-gradient(ellipse 42% 40% at center, var(--veil-center), var(--veil)); }
+
+  main { position: relative; width: min(380px, calc(100% - 32px)); text-align: center; }
+  .lock {
+    width: 60px; height: 60px; margin: 0 auto 18px; border-radius: 14px;
+    display: grid; place-items: center; background: var(--sign);
+    box-shadow: inset 0 0 0 3px var(--sign), inset 0 0 0 5px #fff, 0 8px 24px rgba(0, 0, 0, 0.18);
+  }
+  h1 { font-size: 21px; font-weight: 700; margin: 0 0 4px; letter-spacing: -0.01em; text-wrap: balance; }
+  p { margin: 0 0 20px; color: var(--muted); }
+
+  .field {
+    display: flex; background: var(--card); border: 1px solid var(--line); border-radius: 12px;
+    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.16);
+  }
+  .field:focus-within { outline: 3px solid var(--focus); outline-offset: 2px; }
+  input {
+    flex: 1; min-width: 0; border: 0; background: transparent; color: var(--ink);
+    font: 400 17px/1.3 var(--font); padding: 14px 16px; border-radius: 12px;
+  }
+  input:focus { outline: none; }
+  button {
+    flex: none; width: 46px; margin: 5px; border: 0; border-radius: 8px; cursor: pointer;
+    background: var(--sign); color: #fff; display: grid; place-items: center;
+  }
+  button:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+  .msg { min-height: 1.5em; margin: 12px 0 0; color: var(--danger); font-weight: 600; }
+</style>
+</head>
+<body data-kind="{{kind}}">
+<div class="art" aria-hidden="true">{{art}}</div>
+<div class="veil"></div>
+<main>
+  <div class="lock" aria-hidden="true">
+    <svg width="26" height="30" viewBox="0 0 26 30"><path d="M6 13V9a7 7 0 0 1 14 0v4" fill="none" stroke="#fff" stroke-width="3.2" stroke-linecap="round"/><rect x="2" y="13" width="22" height="16" rx="4" fill="#fff"/></svg>
+  </div>
+  <h1>{{heading}}</h1>
+  <p>{{intro}}</p>
+  <form method="post">
+    <div class="field">
+      <input type="password" name="password" aria-label="{{password}}" placeholder="{{password}}"
+             autocomplete="current-password" autofocus required
+             aria-invalid="{{invalid}}" aria-describedby="msg">
+      <button type="submit" aria-label="{{open}}">
+        <svg width="20" height="20" viewBox="0 0 20 20" aria-hidden="true"><path d="M4 10h11M11 5l5 5-5 5" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </button>
+    </div>
+    <div class="msg" id="msg" role="alert">{{message}}</div>
+  </form>
+</main>
+</body>
+</html>

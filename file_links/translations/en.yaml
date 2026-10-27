@@ -4,5 +4,11 @@ configuration:
     description: >-
       The address your tunnel points at this add-on, for example
       https://files.vanbaelen.dev. Used to show copyable links.
+  language:
+    name: Public page language
+    description: >-
+      Language of the pages visitors see, like the password page: en (English),
+      nl (Dutch), fr (French) or de (German). Choose auto to follow each
+      visitor's browser language.
 network:
   8080/tcp: Public file server. Point your Cloudflare tunnel at this port.
