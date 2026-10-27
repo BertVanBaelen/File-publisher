@@ -1,0 +1,8 @@
+configuration:
+  public_url:
+    name: Public URL
+    description: >-
+      The address your tunnel points at this add-on, for example
+      https://files.vanbaelen.dev. Used to show copyable links.
+network:
+  8080/tcp: Public file server. Point your Cloudflare tunnel at this port.

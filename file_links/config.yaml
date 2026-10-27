@@ -1,0 +1,24 @@
+name: File Links
+version: "1.0.0"
+slug: file_links
+description: Serve chosen files under clean public paths, like /resume
+url: https://github.com/YOUR_GITHUB_USERNAME/ha-addons
+arch:
+  - aarch64
+  - amd64
+  - armv7
+startup: application
+boot: auto
+ingress: true
+ingress_port: 8099
+panel_icon: mdi:link-variant
+panel_title: File Links
+ports:
+  8080/tcp: 8090
+map:
+  - type: share
+    read_only: false
+options:
+  public_url: ""
+schema:
+  public_url: str?
