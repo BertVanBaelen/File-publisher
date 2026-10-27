@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.1.1
+
+- Favicon on the public pages is now green, to match the pages.
+
 ## 1.1.0
 
 - Links can ask for a password. Visitors see a lock page with a blurred picture of the kind
