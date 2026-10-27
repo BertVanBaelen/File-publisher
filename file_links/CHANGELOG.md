@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.2.0
+
+- A wrong password no longer reloads the password page; the field shakes and clears.
+- The right password opens the lock, sharpens the background and moves straight on to the
+  file. Download links start the download and offer a "Download again" button.
+- Big files open faster: the file server now supports byte ranges, so PDF viewers fetch
+  only the pages on screen and videos can stream and seek.
+
 ## 1.1.1
 
 - Favicon on the public pages is now green, to match the pages.

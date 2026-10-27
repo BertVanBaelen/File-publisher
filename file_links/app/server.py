@@ -19,7 +19,6 @@ import mimetypes
 import os
 import re
 import secrets
-import shutil
 import threading
 import time
 import urllib.parse
@@ -76,6 +75,9 @@ STRINGS = {
         "too_many": "Too many wrong tries. Wait a few minutes, then try again.",
         "error": "Something went wrong. Try again.",
         "not_found": "Not found",
+        "opening": "Opening…",
+        "downloading": "Your download is starting.",
+        "download_again": "Download again",
     },
     "nl": {
         "title": "Wachtwoord nodig",
@@ -87,6 +89,9 @@ STRINGS = {
         "too_many": "Te veel foute pogingen. Wacht een paar minuten en probeer het dan opnieuw.",
         "error": "Er ging iets mis. Probeer het opnieuw.",
         "not_found": "Niet gevonden",
+        "opening": "Openen…",
+        "downloading": "Je download start.",
+        "download_again": "Opnieuw downloaden",
     },
     "fr": {
         "title": "Mot de passe requis",
@@ -98,6 +103,9 @@ STRINGS = {
         "too_many": "Trop de tentatives incorrectes. Patientez quelques minutes, puis réessayez.",
         "error": "Une erreur s’est produite. Réessayez.",
         "not_found": "Introuvable",
+        "opening": "Ouverture…",
+        "downloading": "Votre téléchargement commence.",
+        "download_again": "Télécharger à nouveau",
     },
     "de": {
         "title": "Passwort erforderlich",
@@ -109,6 +117,9 @@ STRINGS = {
         "too_many": "Zu viele falsche Versuche. Warte ein paar Minuten und versuche es dann erneut.",
         "error": "Etwas ist schiefgelaufen. Versuche es erneut.",
         "not_found": "Nicht gefunden",
+        "opening": "Wird geöffnet…",
+        "downloading": "Dein Download startet.",
+        "download_again": "Erneut herunterladen",
     },
 }
 
@@ -265,6 +276,30 @@ def file_kind(name):
     return KIND_OF.get(Path(name or "").suffix.lower().lstrip("."), "file")
 
 
+def parse_range(header, size):
+    """'bytes=0-99' -> (0, 99). False: ignore the header and send everything. None: unsatisfiable.
+
+    One range at a time is enough for PDF viewers and video players; they ask again for more.
+    """
+    unit, _, spec = header.partition("=")
+    if unit.strip().lower() != "bytes" or "," in spec:
+        return False
+    first, sep, last = spec.strip().partition("-")
+    if not sep:
+        return False
+    try:
+        if not first:  # "bytes=-500": the last 500 bytes
+            count = int(last)
+            return (max(0, size - count), size - 1) if count > 0 else None
+        start = int(first)
+        end = min(int(last), size - 1) if last else size - 1
+    except ValueError:
+        return False
+    if start >= size:
+        return None
+    return (start, end) if end >= start else False
+
+
 # ---------------------------------------------------------------- helpers
 
 class Base(BaseHTTPRequestHandler):
@@ -284,12 +319,14 @@ class Base(BaseHTTPRequestHandler):
         if not head:
             self.wfile.write(body)
 
-    def send_json(self, code, data):
+    def send_json(self, code, data, headers=()):
         body = json.dumps(data).encode()
         self.send_response(code)
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Cache-Control", "no-store")
+        for name, value in headers:
+            self.send_header(name, value)
         self.end_headers()
         self.wfile.write(body)
 
@@ -399,6 +436,8 @@ class PublicHandler(Base):
         page = page.replace("{{art}}", art).replace("{{kind}}", kind).replace("{{lang}}", lang)
         page = page.replace("{{message}}", html.escape(text[message]) if message else "")
         page = page.replace("{{invalid}}", "true" if message else "false")
+        nonce = secrets.token_urlsafe(16)
+        page = page.replace("{{nonce}}", nonce)
         for key, value in text.items():
             page = page.replace("{{" + key + "}}", html.escape(value))
         body = page.encode()
@@ -409,7 +448,8 @@ class PublicHandler(Base):
         self.send_header("Vary", "Accept-Language")
         self.send_header("Cache-Control", "no-store")
         self.send_header("Content-Security-Policy",
-                         "default-src 'none'; style-src 'unsafe-inline'; img-src 'self'; "
+                         f"default-src 'none'; script-src 'nonce-{nonce}'; connect-src 'self'; "
+                         "style-src 'unsafe-inline'; img-src 'self'; "
                          "form-action 'self'; frame-ancestors 'none'; base-uri 'none'")
         self.send_header("X-Frame-Options", "DENY")
         self.send_header("Referrer-Policy", "no-referrer")
@@ -432,10 +472,32 @@ class PublicHandler(Base):
         disposition = "attachment" if link.get("download") else "inline"
         ascii_name = path.name.encode("ascii", "ignore").decode().replace('"', "") or "file"
         utf8_name = urllib.parse.quote(path.name)
+        st = path.stat()
+        size = st.st_size
+        etag = f'"{st.st_mtime_ns:x}-{size:x}"'
 
-        self.send_response(200)
+        # Byte ranges let PDF viewers fetch just the pages on screen, and videos seek,
+        # instead of downloading the whole file first.
+        start, end = 0, size - 1
+        wanted = self.headers.get("Range")
+        if_range = self.headers.get("If-Range")
+        span = parse_range(wanted, size) if wanted and size and if_range in (None, etag) else False
+        if span is None:
+            self.send_response(416)
+            self.send_header("Content-Range", f"bytes */{size}")
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+            return
+        if span:
+            start, end = span
+
+        self.send_response(206 if span else 200)
         self.send_header("Content-Type", ctype)
-        self.send_header("Content-Length", str(path.stat().st_size))
+        self.send_header("Content-Length", str(end - start + 1))
+        if span:
+            self.send_header("Content-Range", f"bytes {start}-{end}/{size}")
+        self.send_header("Accept-Ranges", "bytes")
+        self.send_header("ETag", etag)
         self.send_header(
             "Content-Disposition",
             f"{disposition}; filename=\"{ascii_name}\"; filename*=UTF-8''{utf8_name}",
@@ -448,7 +510,14 @@ class PublicHandler(Base):
             return
         try:
             with path.open("rb") as fh:
-                shutil.copyfileobj(fh, self.wfile, CHUNK)
+                fh.seek(start)
+                remaining = end - start + 1
+                while remaining > 0:
+                    chunk = fh.read(min(CHUNK, remaining))
+                    if not chunk:
+                        break
+                    self.wfile.write(chunk)
+                    remaining -= len(chunk)
         except (BrokenPipeError, ConnectionResetError):
             pass
 
@@ -461,20 +530,33 @@ class PublicHandler(Base):
         if not stored:
             return self.send_text(405, "Method not allowed")
 
+        # The lock page's script asks for JSON so a wrong password doesn't reload the page.
+        # Without JavaScript the plain form post still works, with a full page each time.
+        scripted = "application/json" in self.headers.get("Accept", "")
+
+        def refuse(code, message):
+            if scripted:
+                return self.send_json(code, {"ok": False, "error": STRINGS[self.language()][message]})
+            return self.send_locked(code, link, message)
+
         ip = self.visitor_ip()
         if too_many_tries(ip):
-            return self.send_locked(429, link, "too_many")
+            return refuse(429, "too_many")
         try:
             form = urllib.parse.parse_qs(b"".join(self.body_chunks(4096)).decode())
         except Exception:
-            return self.send_locked(400, link, "error")
+            return refuse(400, "error")
         if not check_password((form.get("password") or [""])[0], stored):
             note_failed_try(ip)
-            return self.send_locked(401, link, "wrong")
+            return refuse(401, "wrong")
 
         cookie = f"{COOKIE}={make_session(key, stored)}; Path={key}; Max-Age={SESSION_SECONDS}; HttpOnly; SameSite=Lax"
         if self.headers.get("X-Forwarded-Proto", "").lower() == "https":
             cookie += "; Secure"
+        if scripted:
+            # Only where to go next. The file itself is fetched by the browser afterwards.
+            return self.send_json(200, {"ok": True, "url": key, "download": bool(link.get("download"))},
+                                  [("Set-Cookie", cookie)])
         self.send_response(303)
         self.send_header("Location", key)
         self.send_header("Set-Cookie", cookie)

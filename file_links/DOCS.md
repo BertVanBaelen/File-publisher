@@ -51,6 +51,8 @@ Visitors first see a lock page with a blurred illustration of the kind of file b
 extension only: it never contains the file, its name or its size. The file is sent only
 after the right password.
 
+- A wrong password shows a message without reloading the page. The right one opens the
+  lock and goes straight to the file (or starts the download, for download links).
 - A correct password unlocks that link in that browser for 12 hours.
 - Changing a link's password, or moving it to another path, locks everyone out again.
 - After 8 wrong passwords in 15 minutes, a visitor has to wait before trying again.
@@ -66,3 +68,6 @@ after the right password.
 - Tick **Download the file instead of showing it in the browser** for files that should
   download, like zips.
 - Paths are case-sensitive, and a trailing slash is ignored (`/resume/` works too).
+- Big files don't have to download in full before they show. The file server supports
+  byte ranges, so the browser's PDF viewer fetches the pages you look at, and videos can
+  start and skip right away. PDFs saved with "Fast Web View" (linearized) open fastest.

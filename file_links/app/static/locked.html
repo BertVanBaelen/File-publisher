@@ -89,14 +89,64 @@
   }
   button:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
   .msg { min-height: 1.5em; margin: 12px 0 0; color: var(--danger); font-weight: 600; }
+  .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+
+  /* Checking: a spinner replaces the arrow */
+  button.busy svg { visibility: hidden; }
+  button.busy::after {
+    content: ""; position: absolute; width: 18px; height: 18px; border-radius: 50%;
+    border: 2.5px solid rgba(255, 255, 255, 0.35); border-top-color: #fff; animation: spin .7s linear infinite;
+  }
+  button { position: relative; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* Wrong password: the field shakes, the page stays */
+  .field.shake { animation: shake .4s cubic-bezier(.36, .07, .19, .97); }
+  @keyframes shake {
+    20%, 60% { transform: translateX(-8px); }
+    40%, 80% { transform: translateX(8px); }
+  }
+
+  /* Right password: the lock opens, the blur lifts, and the browser moves on to the file */
+  .lock svg { overflow: visible; }
+  .shackle { transition: transform .25s ease-out; }
+  body.open .shackle, body.downloaded .shackle { transform: translateY(-5px); }
+  .art { transition: filter .7s ease, transform .9s cubic-bezier(.2, .7, .2, 1); }
+  .veil { transition: opacity .5s ease; }
+  main { transition: opacity .35s ease .2s, transform .45s ease .2s; }
+  body.open .art { filter: blur(0); transform: scale(1.16); }
+  body.open .veil { opacity: 0; }
+  body.open main { opacity: 0; transform: scale(.94) translateY(8px); pointer-events: none; }
+  .bar {
+    position: fixed; top: 0; left: 0; right: 0; height: 3px; background: var(--sign);
+    transform: scaleX(0); transform-origin: left; opacity: 0;
+  }
+  body.open .bar { opacity: 1; animation: load 3s cubic-bezier(.1, .6, .2, 1) .45s forwards; }
+  @keyframes load { to { transform: scaleX(.9); } }
+
+  /* Download links: the file downloads and this page stays, with a way to try again */
+  .done { display: none; }
+  body.downloaded form { display: none; }
+  body.downloaded .done { display: block; }
+  .again {
+    display: inline-block; margin-top: 4px; padding: 11px 18px 10px; border-radius: 10px;
+    background: var(--sign); color: #fff; font-weight: 600; text-decoration: none;
+  }
+  .again:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { transition: none !important; animation-duration: 0s !important; }
+    button.busy::after { animation: spin 1.4s linear infinite !important; }
+  }
 </style>
 </head>
-<body data-kind="{{kind}}">
+<body data-kind="{{kind}}" data-error="{{error}}" data-opening="{{opening}}" data-downloading="{{downloading}}">
 <div class="art" aria-hidden="true">{{art}}</div>
 <div class="veil"></div>
+<div class="bar" aria-hidden="true"></div>
 <main>
   <div class="lock" aria-hidden="true">
-    <svg width="26" height="30" viewBox="0 0 26 30"><path d="M6 13V9a7 7 0 0 1 14 0v4" fill="none" stroke="#fff" stroke-width="3.2" stroke-linecap="round"/><rect x="2" y="13" width="22" height="16" rx="4" fill="#fff"/></svg>
+    <svg width="26" height="30" viewBox="0 0 26 30"><path class="shackle" d="M6 13V9a7 7 0 0 1 14 0v4" fill="none" stroke="#fff" stroke-width="3.2" stroke-linecap="round"/><rect x="2" y="13" width="22" height="16" rx="4" fill="#fff"/></svg>
   </div>
   <h1>{{heading}}</h1>
   <p>{{intro}}</p>
@@ -111,6 +161,82 @@
     </div>
     <div class="msg" id="msg" role="alert">{{message}}</div>
   </form>
+  <div class="done">
+    <p>{{downloading}}</p>
+    <a class="again" id="again" href="#">{{download_again}}</a>
+  </div>
+  <div class="sr" id="status" role="status"></div>
 </main>
+<script nonce="{{nonce}}">
+(() => {
+  const body = document.body;
+  const form = document.querySelector("form");
+  const input = form.elements.password;
+  const button = form.querySelector("button");
+  const field = form.querySelector(".field");
+  const msg = document.getElementById("msg");
+  const status = document.getElementById("status");
+  const calm = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  let busy = false;
+
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    if (busy) return;
+    busy = true;
+    button.classList.add("busy");
+    input.readOnly = true;
+
+    let res = null, data = {};
+    try {
+      res = await fetch(location.pathname, {
+        method: "POST",
+        credentials: "same-origin",
+        cache: "no-store",
+        headers: { "Accept": "application/json" },
+        body: new URLSearchParams({ password: input.value }),
+      });
+      data = await res.json();
+    } catch (err) {
+      data = {};
+    }
+    busy = false;
+    button.classList.remove("busy");
+    input.readOnly = false;
+    if (data.ok) return unlock(data);
+
+    msg.textContent = data.error || body.dataset.error;
+    input.setAttribute("aria-invalid", "true");
+    if (res && res.status === 401) {
+      input.value = "";
+      field.classList.remove("shake");
+      void field.offsetWidth;  // restart the animation
+      field.classList.add("shake");
+    }
+    input.focus();
+  });
+
+  function unlock(data) {
+    input.value = "";
+    msg.textContent = "";
+    input.setAttribute("aria-invalid", "false");
+    if (data.download) {
+      body.classList.add("downloaded");
+      document.getElementById("again").href = data.url;
+      status.textContent = body.dataset.downloading;
+      location.assign(data.url);
+      return;
+    }
+    status.textContent = body.dataset.opening;
+    body.classList.add("open");
+    // replace(): the back button skips the lock page, it has done its job.
+    setTimeout(() => location.replace(data.url), calm ? 0 : 750);
+  }
+
+  // Coming back from the back/forward cache: show the page as it was, not mid-transition.
+  addEventListener("pageshow", (event) => {
+    if (event.persisted) body.classList.remove("open");
+  });
+})();
+</script>
 </body>
 </html>
