@@ -28,6 +28,7 @@ from pathlib import Path
 FILES_DIR = Path(os.environ.get("FILES_DIR", "/share/file_links"))
 DATA_DIR = Path(os.environ.get("DATA_DIR", "/data"))
 LINKS_FILE = DATA_DIR / "links.json"
+STATS_FILE = DATA_DIR / "stats.json"
 OPTIONS_FILE = DATA_DIR / "options.json"
 SECRET_FILE = DATA_DIR / "session_secret"
 STATIC_DIR = Path(__file__).parent / "static"
@@ -126,6 +127,9 @@ STRINGS = {
 lock = threading.Lock()
 tries_lock = threading.Lock()
 failed_tries = {}  # visitor ip -> [timestamps of wrong passwords]
+stats_lock = threading.Lock()
+recent_opens = {}  # (visitor ip, link path) -> time of the last counted open
+OPEN_REPEAT = 30   # seconds in which the same visitor opening the same link counts once
 _secret = None
 
 
@@ -150,6 +154,56 @@ def save_links(links):
     tmp = LINKS_FILE.with_suffix(".tmp")
     tmp.write_text(json.dumps(links, indent=2, sort_keys=True))
     tmp.replace(LINKS_FILE)
+
+
+# Per link: how often it was opened and how its password was tried. Counts and times
+# only; who did it (their IP address) is never written down.
+#   {"/cv": {"opens": 3, "last_opens": 1793100000, "right": 2, "wrong": 1, "blocked": 0, ...}}
+
+def load_stats():
+    try:
+        data = json.loads(STATS_FILE.read_text())
+        return data if isinstance(data, dict) else {}
+    except Exception:
+        return {}
+
+
+def save_stats(stats):
+    tmp = STATS_FILE.with_suffix(".tmp")
+    tmp.write_text(json.dumps(stats, indent=2, sort_keys=True))
+    tmp.replace(STATS_FILE)
+
+
+def count(path, event):
+    with stats_lock:
+        stats = load_stats()
+        entry = stats.setdefault(path, {})
+        entry[event] = entry.get(event, 0) + 1
+        entry[f"last_{event}"] = int(time.time())
+        save_stats(stats)
+
+
+def count_open(ip, path):
+    """PDF viewers and video players ask for a file in many pieces; count a visit once."""
+    now = time.time()
+    with stats_lock:
+        for seen in [k for k, t in recent_opens.items() if now - t > OPEN_REPEAT]:
+            del recent_opens[seen]
+        repeat = (ip, path) in recent_opens
+        recent_opens[(ip, path)] = now
+    if not repeat:
+        count(path, "opens")
+
+
+def move_stats(old, new):
+    with stats_lock:
+        stats = load_stats()
+        if old in stats:
+            if new:
+                stats[new] = stats.pop(old)
+            else:
+                del stats[old]
+            save_stats(stats)
 
 
 def normalize_path(raw):
@@ -508,6 +562,8 @@ class PublicHandler(Base):
         self.end_headers()
         if head:
             return
+        if start == 0:  # later pieces of the same file are part of the same visit
+            count_open(self.visitor_ip(), key)
         try:
             with path.open("rb") as fh:
                 fh.seek(start)
@@ -541,6 +597,7 @@ class PublicHandler(Base):
 
         ip = self.visitor_ip()
         if too_many_tries(ip):
+            count(key, "blocked")
             return refuse(429, "too_many")
         try:
             form = urllib.parse.parse_qs(b"".join(self.body_chunks(4096)).decode())
@@ -548,7 +605,9 @@ class PublicHandler(Base):
             return refuse(400, "error")
         if not check_password((form.get("password") or [""])[0], stored):
             note_failed_try(ip)
+            count(key, "wrong")
             return refuse(401, "wrong")
+        count(key, "right")
 
         cookie = f"{COOKIE}={make_session(key, stored)}; Path={key}; Max-Age={SESSION_SECONDS}; HttpOnly; SameSite=Lax"
         if self.headers.get("X-Forwarded-Proto", "").lower() == "https":
@@ -585,13 +644,16 @@ class AdminHandler(Base):
         with lock:
             links = load_links()
             files = list_files(links)
+        with stats_lock:
+            stats = load_stats()
         public_url = str(load_options().get("public_url") or "").strip().rstrip("/")
         return {
             "public_url": public_url,
             "links": [
                 {"path": p, "file": l.get("file"), "download": bool(l.get("download")),
                  "protected": bool(l.get("password")),
-                 "missing": safe_file(l.get("file")) is None}
+                 "missing": safe_file(l.get("file")) is None,
+                 "stats": stats.get(p, {})}
                 for p, l in sorted(links.items())
             ],
             "files": files,
@@ -646,12 +708,15 @@ class AdminHandler(Base):
             stored = new_hash or (protect and (links.get(old_key) or {}).get("password")) or None
             if protect and not stored:
                 return self.send_json(400, {"error": "Type a password, or untick the password option."})
-            if old_key and old_key != path:
+            moved = old_key and old_key != path
+            if moved:
                 links.pop(old_key, None)
             links[path] = {"file": file_name, "download": bool(data.get("download"))}
             if stored:
                 links[path]["password"] = stored
             save_links(links)
+        if moved:
+            move_stats(old_key, path)  # the counts follow the link to its new path
         self.send_json(200, self.state())
 
     def do_PUT(self):
@@ -687,6 +752,10 @@ class AdminHandler(Base):
                 links = load_links()
                 links.pop(path, None)
                 save_links(links)
+            move_stats(path, None)
+            return self.send_json(200, self.state())
+        if route == "/api/stats":
+            move_stats(normalize_path((q.get("path") or [""])[0]), None)
             return self.send_json(200, self.state())
         if route == "/api/files":
             name = (q.get("name") or [""])[0]

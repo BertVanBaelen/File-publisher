@@ -65,6 +65,10 @@
   .row .file strong { font-weight: 600; display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .row .file span { color: var(--muted); font-size: 14px; }
   .row .file .warn { color: var(--danger); }
+  .row .file .stats { display: block; margin-top: 2px; }
+  .row .file .stats b { font-weight: 600; color: var(--ink); }
+  .row .file .stats .bad { color: var(--danger); }
+  .row .file .stats .sep { margin: 0 7px; }
   .actions { display: flex; flex-wrap: wrap; gap: 4px 14px; justify-content: flex-end; }
   .empty { color: var(--muted); padding: 18px 0; border-bottom: 1px solid var(--line); }
 
@@ -180,6 +184,32 @@ const $ = (id) => document.getElementById(id);
 function esc(s) {
   return String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 }
+function when(t) {
+  return new Date(t * 1000).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
+}
+function times(n, word) { return "<b>" + n + "</b> " + word + (n === 1 ? "" : "s"); }
+function hasStats(s) { return Boolean(s.opens || s.right || s.wrong || s.blocked); }
+
+// "Opened 12 times, last 27 Oct 2026, 14:20 · Password: 10 right, 3 wrong"
+function statsLine(l) {
+  const s = l.stats || {};
+  const details = [];
+  let html = s.opens ? "Opened " + times(s.opens, "time") : "Not opened yet";
+  if (s.last_opens) {
+    html += ", last " + esc(when(s.last_opens));
+    details.push("Last opened: " + when(s.last_opens));
+  }
+  if (l.protected || s.right || s.wrong || s.blocked) {
+    html += '<span class="sep">·</span>Password: <b>' + (s.right || 0) + "</b> right, ";
+    html += (s.wrong ? '<span class="bad">' : "<span>") + "<b>" + (s.wrong || 0) + "</b> wrong</span>";
+    if (s.blocked) html += ', <span class="bad"><b>' + s.blocked + "</b> blocked</span>";
+    if (s.last_right) details.push("Last right password: " + when(s.last_right));
+    if (s.last_wrong) details.push("Last wrong password: " + when(s.last_wrong));
+    if (s.last_blocked) details.push("Last blocked try: " + when(s.last_blocked));
+  }
+  return `<span class="stats" title="${esc(details.join("\n"))}">${html}</span>`;
+}
+
 function size(n) {
   if (n < 1024) return n + " B";
   if (n < 1048576) return (n / 1024).toFixed(0) + " KB";
@@ -225,11 +255,13 @@ function render() {
         <strong title="${esc(l.file)}">${esc(l.file)}</strong>
         ${l.missing ? '<span class="warn">This file is gone. Upload it again or point the link at another file.</span>'
                     : "<span>" + (l.download ? "Downloads" : "Opens in the browser") + (l.protected ? ", needs a password" : "") + "</span>"}
+        ${statsLine(l)}
       </div>
       <div class="actions">
         ${fullUrl(l.path) ? `<button class="link" data-copy="${esc(l.path)}">Copy link</button>
         <a class="link" href="${esc(fullUrl(l.path))}" target="_blank" rel="noopener">Open</a>` : ""}
         <button class="link" data-edit="${esc(l.path)}">Edit</button>
+        ${hasStats(l.stats || {}) ? `<button class="link" data-reset="${esc(l.path)}">Reset counts</button>` : ""}
         <button class="link danger" data-remove="${esc(l.path)}">Remove</button>
       </div>
     </div>`).join("")
@@ -305,6 +337,10 @@ document.addEventListener("click", async (e) => {
       $("cancel").hidden = false;
       $("form").scrollIntoView({ behavior: "smooth", block: "center" });
       $("path").focus();
+    } else if (t.dataset.reset) {
+      if (!confirm("Set the counts for " + t.dataset.reset + " back to zero?")) return;
+      await api("DELETE", "api/stats?path=" + encodeURIComponent(t.dataset.reset));
+      toast("Counts reset for " + t.dataset.reset);
     } else if (t.dataset.remove) {
       if (!confirm("Remove the link " + t.dataset.remove + "? The file stays.")) return;
       await api("DELETE", "api/links?path=" + encodeURIComponent(t.dataset.remove));
@@ -337,6 +373,12 @@ drop.addEventListener("drop", (e) => upload([...e.dataTransfer.files]));
 
 fetch("api/state").then((r) => r.json()).then((d) => { state = d; render(); })
   .catch(() => toast("Couldn’t load your links. Check the add-on’s Log tab.", true));
+
+// Keep the counts current while the page is open.
+setInterval(() => {
+  if (document.hidden) return;
+  fetch("api/state").then((r) => r.json()).then((d) => { state = d; render(); }).catch(() => {});
+}, 30000);
 </script>
 </body>
 </html>

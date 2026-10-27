@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.3.0
+
+- The management page counts, per link, how often the file was opened and how many
+  password tries were right, wrong or blocked, with the time of the last one. Counts can
+  be reset per link. No IP addresses are stored.
+
 ## 1.2.0
 
 - A wrong password no longer reloads the password page; the field shakes and clears.

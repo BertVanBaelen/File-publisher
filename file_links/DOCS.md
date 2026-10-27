@@ -60,6 +60,19 @@ after the right password.
 - Protected files are sent with `Cache-Control: private, no-store`, so Cloudflare doesn't
   cache them. Keep your tunnel on HTTPS: the password travels in the request.
 
+## Counts
+
+Each link on the management page shows how often it was opened and, for links with a
+password, how many tries were right, wrong or blocked (too many wrong tries). Hover the
+line to see when each last happened. The page updates every 30 seconds while it's open.
+
+- An open is counted when the file is actually sent, so seeing only the password page
+  doesn't count. The same visitor opening the same link again within 30 seconds counts
+  once, so a PDF viewer or video player fetching a file in pieces is one open.
+- Only counts and times are kept, never who opened a link or their IP address.
+- **Reset counts** sets a link back to zero. Counts follow a link when you change its path,
+  and are deleted with it.
+
 ## Tips
 
 - Want `files.vanbaelen.dev` itself to show something? Create a link with an empty path (`/`).
