@@ -8,7 +8,7 @@
 - Add-on icon and logo.
 - New **Public page language** option: English, Dutch, French, German, or follow the
   visitor's browser.
-- Blue BVB favicon on the public pages.
+- Green BVB favicon on the public pages.
 
 ## 1.0.0
 

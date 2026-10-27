@@ -37,7 +37,7 @@ the password page and the "not found" message: English (`en`), Dutch (`nl`), Fre
 or German (`de`). Choose `auto` to follow each visitor's browser language; browsers set to
 another language get English.
 
-The public pages show a blue BVB icon in the browser tab. To use a different one, create a
+The public pages show a green BVB icon in the browser tab. To use a different one, create a
 link with the path `favicon.ico` pointing at your own icon file.
 
 ## Password-protected links
